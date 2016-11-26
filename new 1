@@ -1,0 +1,517 @@
+﻿#include <SPI.h>                                          // Подключаем библиотеку для работы с шиной SPI
+#include <nRF24L01.h>                                     // Подключаем файл настроек из библиотеки RF24
+#include <RF24.h>                                         // Подключаем библиотеку для работы с nRF24L01+
+RF24           radio(9, 10);                              // Создаём объект radio для работы с библиотекой RF24, указывая номера выводов nRF24L01+ (CE, CSN)
+int            mapData[4][4];  // карта, которую мы принимаем от других роботов
+int            comand;       
+int mySpottedDirects;
+int mapp[4][4];//Карта, которая обрабатывается роботом(его карта)
+const int varX[] = {1, 0, -1, 0 };
+const int varY[] = {0, 1,  0, -1}; 
+int queue[25];
+bool isStepMod = 0;
+int coordX = 0;
+int coordY = 0;
+int direct = 0;
+int mycomand = 0;
+
+int coordXold = 0;
+int coordYold = 0;
+int robot_id = 3;
+
+
+
+
+void setup() {
+	delay(1000);
+	radio.begin();                                        // Инициируем работу nRF24L01+
+	radio.setChannel(5);                                  // Указываем канал приёма данных (от 0 до 127), 5 - значит приём данных осуществляется на частоте 2,405 ГГц (на одном канале может быть только 1 приёмник и до 6 передатчиков)
+	radio.setDataRate     (RF24_1MBPS);                   // Указываем скорость передачи данных (RF24_250KBPS, RF24_1MBPS, RF24_2MBPS), RF24_1MBPS - 1Мбит/сек
+	radio.setPALevel      (RF24_PA_HIGH);                 // Указываем мощность передатчика (RF24_PA_MIN=-18dBm, RF24_PA_LOW=-12dBm, RF24_PA_HIGH=-6dBm, RF24_PA_MAX=0dBm)
+	radio.openReadingPipe (1, 0x1234567890LL);
+	radio.openWritingPipe ( 0x1234567890LL);// Открываем 1 трубу с идентификатором 0x1234567890 для приема данных (на ожном канале может быть открыто до 6 разных труб, которые должны отличаться только последним байтом идентификатора)
+
+	// put your setup code here, to run once:  
+}
+
+
+
+
+void loop() {
+	// put your main code here, to run repeatedly:
+
+}
+
+
+
+
+
+void coordinator()//Узнаём направление робота на карте
+{
+	for(int i = 0; i < 4; i++)
+	{
+		if(varX[i] == coordX - coordXold && varY[i] == coordY - coordYold)
+			direct = i;
+	}
+}
+
+
+
+
+void Move(int direct, bool lool/*проверяет движемся ли мы или строим карту.*/)
+{
+	if(lool)
+	{
+		if(direct == 1)
+		{
+			analogWrite(5, 0);
+			analogWrite(6, 0);
+		}
+		if(direct == 0)
+		{
+			digitalWrite(4, HIGH);
+			digitalWrite(7, HIGH);
+			analogWrite(5, 255);
+			analogWrite(6, 255);
+		}
+	}
+	if(!lool)
+	{
+		if(direct>0)
+		{
+			for(int j = 0; j < direct; j++)
+			{
+				digitalWrite(4, LOW);
+				digitalWrite(7, HIGH);
+				analogWrite(5, 255);
+				analogWrite(6, 255);
+				//encoder oneLove :* <3
+			}
+		}
+		if(direct<0)
+		{
+			for(int j = 0; j < direct; j++)
+			{
+				digitalWrite(4, HIGH);
+				digitalWrite(7, LOW);
+				analogWrite(5, 255);
+				analogWrite(6, 255);
+				//encoder oneLove :* <3
+			}
+		}
+	}
+}
+
+
+
+
+void check()//Правит карту в ближайщих четырёх клетках
+{
+	for(int i = 0; i < 4; i++)
+	{
+		if(coordX + varX[i] < 4 && coordX + varX[i] > -1 && coordY + varY[i] < 4 && coordY + varY[i] > -1 && mapp[coordX + varX[i]][coordY + varY[i]] == 0 )
+		{
+			int q = direct-i;//                   }
+			if(abs(q)>2&&q!=0)Move(-(q)%2,0);//    }  поворот для чека тумана войны.
+			else if(q!=0)Move(q,0);//             }
+			if(digitalRead(A0) == 1)
+				mapp[coordX + varX[i]][coordY + varY[i]] == 1;
+			else
+				mapp[coordX + varX[i]][coordY + varY[i]] == 2;
+			//                                                     Процесс чека of тумае войны и правка карты
+
+		}
+
+	}
+}
+
+
+
+void leftHand()//Алгоритм прохода условного лабиринта по правилу левой руки
+{
+	int way = (direct+3)%4;
+	coordXold = coordX;
+	coordYold = coordY;
+
+	{
+		if(mapp[coordX + varX[way]][coordY+varY[way]] == 1)
+		{
+			int q = way;
+			if(abs(q)>2&&q!=0)Move(-(q)%2,0);
+			else if(q!=0)Move(q,0);
+			Move(0,1);
+			coordX = coordX + varX[way];
+			coordY = coordY + varY[way]; 
+		}
+		else 
+		{
+			if(mapp[coordX + varX[direct]][coordY+varY[direct]] == 1)
+			{
+				Move(0,1);
+				coordX = coordX + varX[direct];
+				coordY = coordY + varY[direct]; 
+
+			}
+			else
+			{
+				if(mapp[coordX + varX[(direct+1)%4]][coordY+varY[(direct+1)%4]] == 1)
+				{
+					int q = (direct+1)%4;
+					if(abs(q)>2&&q!=0)Move(-(q)%2,0);
+					else if(q!=0)Move(q,0);
+					Move(0,1);
+					coordX = coordX + varX[(direct+1)%4];
+					coordY = coordY + varY[(direct+1)%4]; 
+
+				}
+				else
+				{
+					Move(2,0);
+					Move(0,1);
+					coordX = coordXold + coordX;
+					coordXold = coordX - coordXold;
+					coordX = coordX - coordXold;
+
+					coordY = coordYold + coordY;
+					coordYold = coordY - coordYold;
+					coordY = coordY - coordYold; 
+
+				}
+			}
+		}
+
+
+	}  
+}       
+//Получение данных по радио
+void recieve()
+{
+
+	radio.startListening  ();            
+	// Если в буфере имеются принятые данные
+	radio.read(&comand, sizeof(comand));                  // Читаем данные в массив data и указываем сколько байт читать
+	radio.read(&mapData, sizeof(mapData)); 
+	/*if(comand == 1)
+	function();
+	*/
+
+}
+
+void makemap()//Слияние своей карты с полученной.
+{
+	for(int i = 0; i < 4; i++)
+		for(int j = 0; j < 4; j++)
+		{
+			if(mapp[i][j] != mapData[i][j] && mapData[i][j] != 0 && mapData[i][j] != 3 )
+				mapp[i][j] = mapData[i][j];  
+		}
+}
+
+void transmite()//Передача данных на второго робота
+{
+	radio.stopListening  ();           
+	radio.write(&mycomand, sizeof(mycomand));
+	radio.write(&mapp, sizeof(mapp)); 
+}
+
+void searchLines()// ЕДЕТ ПО СИГНАЛУ
+{
+	bool chek=false;
+	bool kek=false;
+	int cool = 0;
+	int crd1X,crd1Y,crd2X,crd2Y;
+	int step = 100;
+	int used[4][4];
+	int search[4][4];
+	int used2[4][4];
+	int q = 0;
+	for(int i = 0; i < 4; i++)
+	{
+		for(int j = 0; j < 4; j++)
+		{
+			if(mapp[i][j]!=1)search[i][j] = -1;
+			else search[i][j] = 0;
+		}
+	}
+	for(int i = 0; i < 4; i++)
+		for(int j = 0; j < 4; j++)
+			used[i][j] = search[i][j]; 
+	search[coordX][coordY]=0;
+	used[coordX][coordY]=2;//где он сейчас есть(алгоритм)
+	while(true)//Рисуем массив search(поиск в ширину)
+	{
+		chek = false;
+		q++;
+		for(int i = 0; i < 4; i++)
+			for(int j = 0; j < 4; j++)
+			{
+				if(used[i][j]==2)
+				{
+					chek=true;
+					for(int w = 0; w < 4; w++)
+					{
+						if(i+ varX[w] < 4 && i + varX[w] > -1 && j+ varY[w] < 4 && j + varY[w] > -1 && used[i + varX[w]][j + varY[w]] == 0)
+						{
+							search[i + varX[w]][j + varY[w]] = q;
+							used2[i + varX[w]][j + varY[w]] = 2;
+						} 
+					}
+					used[i][j] = -1;
+				}
+			}
+			for(int i = 0; i < 4; i++)
+				for(int j = 0; j < 4; j++)//переход на следующий уровень(q++) массива used
+				{
+					if(used2[i][j]==2)
+					{
+						used[i][j]=2;
+						used2[i][j]=0;
+					}
+				}
+
+				/*			cout << "\n\n";
+				for(int i = 0; i < 4; i++)
+				{
+				for(int j = 0; j < 4; j++)
+				cout << search[i][j];
+				cout << "\n";
+				}*/
+				if(!chek)break;
+	}
+	q=0;
+	for(int i = 0; i < 4; i++)
+	{
+		for(int j = 0; j < 4; j++)//Находим груз на карте
+		{
+			if(mapp[i][j]==-2){crd1X=i;crd1Y=j;}
+		}
+	}
+
+	for(int i = 0; i < 4; i++){
+		if(mapp[crd1X+varX[i]][crd1Y+varY[i]]>2)crd1X+=varX[i]; crd1Y+=varY[i];}// поставили координаты на робота, рядом с объектом
+
+	if(/*направление приславшего = 0*/)crd2X=crd1X+2;
+	if(/*направление приславшего = 1*/)crd2Y=crd1y+2;      //Находим место, напротив 1го робота(через груз)
+	if(/*направление приславшего = 2*/)crd2X=crd1X-2;
+	if(/*направление приславшего = 3*/)crd2Y=crd1Y-2;
+
+	if(/*направление приславшего = 0*/)crd1X-=1;
+	if(/*направление приславшего = 1*/)crd1Y-=1;      //Находим место, позади 1го робота
+	if(/*направление приславшего = 2*/)crd1X+=1;
+	if(/*направление приславшего = 3*/)crd1Y+=1;
+	//crd2X=crd1X;crd2Y=crd1Y-1; //Нужно было для проверки пути по -2
+
+	//1 СПОСОБ
+	if(search[crd2X][crd2Y]>0)//Робот помогает роботу с другой стороны груза. Работаем с crd2 XY
+	{
+		cool=1;
+		step=search[crd2X][crd2Y];
+		search[crd2X][crd2Y]=-2;
+		while(true)//рисуем путь из -2 от груза до помогающего робота
+		{
+			if(step==0)break;
+			for(int i = 0; i < 4; i++)
+			{
+				if(search[crd2X+varX[i]][crd2Y+varY[i]]==step-1){search[crd2X][crd2Y]=-2;crd2X+=varX[i];crd2Y+=varY[i];}
+			}
+			step--;
+		}
+
+		while(true)//Робот едет до пунтка назначения
+		{
+			if(chek)break;
+			chek=true;
+			for(int i = 0; i < 4; i++)
+			{
+				if(search[coordX+varX[i]][coordY+varY[i]]==-2)//поворачивается на -2 и едет в эту клетку.
+				{
+					int z = direct-i;
+					if(abs(z)>2&&z!=0)Move(-(z)%2,0);
+					else if(z!=0)Move(z,0);  
+					Move(0,1);
+					chek=false;
+					search[coordX+varX[i]][coordY+varY[i]]=0;
+					coordX+=varX[i];coordY+=varY[i];
+					break;
+				}
+			}
+
+		}
+		for(int i = 0; i < 4; i++)
+		{
+			if(mapp[coordX+varX[i]][coordY+varY[i]]==-2)//Поворачивается лицом к грузу.
+			{
+				int z = direct-i;
+				if(abs(z)>2&&z!=0)Move(-(z)%2,0);
+				else if(z!=0)Move(z,0);  
+			}
+		}
+	}
+
+	//2 СПОСОБ
+	if(cool==0){if(search[crd1X][crd1Y]>0) //Робот тащит робота. Работаем с crd1 XY
+	{
+		cool=1;
+		step=search[crd1X][crd1Y];
+		search[crd1X][crd1Y]=-2;
+
+		while(true)//рисуем путь из -2 от данного места до помогающего робота
+		{
+			if(step==0)break;
+			for(int i = 0; i < 4; i++)
+			{
+				if(search[crd1X+varX[i]][crd1Y+varY[i]]==step-1){search[crd1X][crd1Y]=-2;crd1X+=varX[i];crd1Y+=varY[i];}
+			}
+			step--;
+		}
+		while(true)//Робот едет до пунтка назначения
+		{
+			if(chek)break;
+			chek=true;
+			for(int i = 0; i < 4; i++)
+			{
+				if(search[coordX+varX[i]][coordY+varY[i]]==-2)//поворачивается на -2 и едет в эту клетку.
+				{
+					int z = direct-i;
+					if(abs(z)>2&&z!=0)Move(-(z)%2,0);
+					else if(z!=0)Move(z,0);  
+					Move(0,1);
+					chek=false;
+					search[coordX+varX[i]][coordY+varY[i]]=0;
+					coordX+=varX[i];coordY+=varY[i];
+					break;
+				}
+			}
+		}
+		for(int i = 0; i < 4; i++)
+		{
+			if(mapp[coordX+varX[i]][coordY+varY[i]]>2)//Поворачивается лицом ко 2му роботу.
+			{
+				int z = direct-i;
+				if(abs(z)>2&&z!=0)Move(-(z)%2,0);
+				else if(z!=0)Move(z,0);  
+			}
+		}
+	}}
+
+	//3 СПОСОБ
+	if(cool==0){//Вообще мясо. Едет к ближайщему от него нулю(к туману войны поблизости)
+		while(true)
+		{
+			kek=false;
+			chek=false;
+			q++;
+			for(int i = 0; i < 4; i++)
+			{
+				if(kek)break;
+				for(int j = 0; j < 4; j++)
+				{
+					if(kek)break;
+					if(search[i][j]==q)
+					{
+						for(int w = 0; w < 4; w++)
+						{
+							if(kek)break;
+							if(mapp[i+varX[w]][j+varY[w]]==0)//нашёл ближайший к нему 0
+							{
+								crd1X=i;
+								crd1Y=j;
+								step=search[i][j];
+								search[i][j]=-2;
+								q=0;
+								kek=true;
+							}
+						}
+					}
+				}
+			}
+
+
+			while(true)//рисуем путь из -2 от данного места до робота
+			{
+				if(step==0)break;
+				for(int i = 0; i < 4; i++)
+				{
+					if(search[crd1X+varX[i]][crd1Y+varY[i]]==step-1){search[crd1X][crd1Y]=-2;crd1X+=varX[i];crd1Y+=varY[i];}
+				}
+				step--;
+			}
+			while(true)//Робот едет до пунтка назначения
+			{
+				if(chek)break;
+				chek=true;
+				for(int i = 0; i < 4; i++)
+				{
+					if(search[coordX+varX[i]][coordY+varY[i]]==-2)//поворачивается на -2 и едет в эту клетку.
+					{
+						int z = direct-i;
+						if(abs(z)>2&&z!=0)Move(-(z)%2,0);
+						else if(z!=0)Move(z,0);  
+						Move(0,1);
+						chek=false;
+						search[coordX+varX[i]][coordY+varY[i]]=0;
+						coordX+=varX[i];coordY+=varY[i];
+						break;
+					}
+				}
+			}
+
+			check();
+			q=0;
+			//Начало создания нового search массива(новый обход в ширину)
+			for(int i = 0; i < 4; i++)
+			{
+				for(int j = 0; j < 4; j++)
+				{
+					if(mapp[i][j]!=1)search[i][j] = -1;
+					else search[i][j] = 0;
+				}
+			}
+			for(int i = 0; i < 4; i++)
+				for(int j = 0; j < 4; j++)
+					used[i][j] = search[i][j]; 
+			for(int i = 0; i < 4; i++)
+				for(int j = 0; j < 4; j++)
+					used2[i][j] = 0; 
+			search[coordX][coordY]=0;
+			used[coordX][coordY]=2;//где он сейчас есть(алгоритм)
+
+			while(true)//Рисуем массив search(поиск в ширину)
+			{
+				chek = false;
+				q++;
+				for(int i = 0; i < 4; i++)
+				{
+					for(int j = 0; j < 4; j++)
+					{
+						if(used[i][j]==2)
+						{
+							chek=true;
+							for(int w = 0; w < 4; w++)
+							{
+								if(i+ varX[w] < 4 && i + varX[w] > -1 && j+ varY[w] < 4 && j + varY[w] > -1 && used[i + varX[w]][j + varY[w]] == 0)
+								{
+									search[i + varX[w]][j + varY[w]] = q;
+									used2[i + varX[w]][j + varY[w]] = 2;
+								} 
+							}
+							used[i][j] = -1;
+						}
+					}
+				}
+				for(int i = 0; i < 4; i++)
+				{
+					for(int j = 0; j < 4; j++)//переход на следующий уровень(q++) массива used
+					{
+						if(used2[i][j]==2)
+						{
+							used[i][j]=2;
+							used2[i][j]=0;
+						}
+					}
+				}
+				if(!chek){q=0;break;}
+			}
+		}
+	}
+}
